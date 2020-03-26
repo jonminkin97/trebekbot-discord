@@ -23,6 +23,10 @@ except ConnectionError:
     print("Could not connect to Redis. Exiting")
     exit(1)
 
+# TODO
+# show the leaderboard
+# filter out "seen here"
+# help pages
 
 # define the bot itself
 bot = commands.Bot(command_prefix='tb ')
@@ -55,12 +59,27 @@ async def get_question(ctx: commands.Context):
     resp = requests.get('http://jservice.io/api/random')
     if not resp.ok:
         print("Failed to get question")
+        await ctx.send("Failed to fetch question from Jeopardy API")
+        return
 
     # pull the question fields out of the response
     question = resp.json()[0]
     category = question.get("category", {}).get("title", "")
     value= question.get("value", 0)
     question_text = question.get("question", "")
+
+    # if the question has "seen here" in it, just get a new question
+    while "seen here" in question:
+        resp = requests.get('http://jservice.io/api/random')
+        if not resp.ok:
+            print("Failed to get question")
+            await ctx.send("Failed to fetch question from Jeopardy API")
+            return
+        question = resp.json()[0]
+        category = question.get("category", {}).get("title", "")
+        value= question.get("value", 0)
+        question_text = question.get("question", "")
+
     response += f'The category is `{category}` for ${value}: `{question_text}`'
 
     # put the question data in redis, turn on "shush", and set the answerable time
@@ -74,6 +93,10 @@ async def get_question(ctx: commands.Context):
 # Command to give an answer
 @bot.command(name='answer', aliases=['a'])
 async def parse_answer(ctx: commands.Context, *args):
+    # only play in the jeopardy channel
+    if ctx.channel.name != "jeopardy":
+        return
+
     user = ctx.author.name
     # piece together the response from what the user typed
     user_response = ""
@@ -89,7 +112,7 @@ async def parse_answer(ctx: commands.Context, *args):
     # if there is no question to get, return some wisdom
     # TODO if multiple people answering at once makes this look weird, get rid of wisdom
     if not question:
-        await get_quote(ctx)
+        # await get_quote(ctx)
         return
 
     # convert redis back to dictionary
@@ -130,7 +153,7 @@ async def parse_answer(ctx: commands.Context, *args):
     
     # print(f'Fuzz ratio between {user_response} and {answer}: {fuzz.ratio(user_response, answer)}')
 
-    user_score = 0 if not r.get(user) else int(r.get(user).decode())
+    user_score = 0 if not r.get("score:" + user) else int(r.get("score:" + user).decode())
 
     # If the user has already attempted this question, shoo them away
     if r.exists(user + ":" + str(question_id)):
@@ -140,9 +163,9 @@ async def parse_answer(ctx: commands.Context, *args):
     # if the user was wrong, deduct points, and shush them for the rest of this question
     if not is_correct:
         user_score -= value
-        r.set(user, user_score)
+        r.set("score:" + user, user_score)
         r.setex(user + ":" + str(question_id), 30, "true")
-        await ctx.send(f'That is incorrect, {user}. Your score is now {user_score}')
+        await ctx.send(f'That is incorrect, {user}. Your score is now {"-$" + str(user_score * -1) if user_score < 0 else "$" + str(user_score)}')
         return
 
     # If the user did not respond within 30 sec, respond accordingly
@@ -151,7 +174,6 @@ async def parse_answer(ctx: commands.Context, *args):
         r.delete("question")
         r.delete("shush")
         r.delete("answerable")
-        # TODO condition where two people have answered at once
         if is_correct:
             await ctx.send(f'That is correct, {user}, but time\'s up! Remember you only have 30 seconds to answer.')
         else:
@@ -161,19 +183,19 @@ async def parse_answer(ctx: commands.Context, *args):
     # If the user did not respond in the form of a question, deduct points and shush them for the rest of the qusestion
     if not is_question_format:
         user_score -= value
-        r.set(user, user_score)
+        r.set("score:" + user, user_score)
         r.setex(user + ":" + str(question_id), 30, "true")
-        await ctx.send(f'That is correct, {user}, but responses have to be in the form of a question. Your score is now {user_score}.')
+        await ctx.send(f'That is correct, {user}, but responses have to be in the form of a question. Your score is now {"-$" + str(user_score * -1) if user_score < 0 else "$" + str(user_score)}.')
         return
 
     # The user answered correctly, so add points and delete the question
     user_score += value
-    r.set(user, user_score)
+    r.set("score:" + user, user_score)
     r.delete("question")
     r.delete("shush")
     r.delete("answerable")
 
-    await ctx.send(f'That is correct, {user}. Your score is now {user_score}.')
+    await ctx.send(f'That is correct, {user}. Your score is now {"-$" + str(user_score * -1) if user_score < 0 else "$" + str(user_score)}.')
 
 
 @bot.command(name='trebek')
