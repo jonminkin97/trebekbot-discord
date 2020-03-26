@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 
 from discord.ext import commands
 
+from trebekhelpcommand import TrebekHelpCommand
+
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 
@@ -27,7 +29,7 @@ except ConnectionError:
 # help pages
 
 # define the bot itself
-bot = commands.Bot(command_prefix='tb ')
+bot = commands.Bot(command_prefix='tb ', help_command=TrebekHelpCommand())
 
 # confirmation message in the shell when connected to Discord
 @bot.event
@@ -35,7 +37,7 @@ async def on_ready():
     print(f'{bot.user.name} has connected to Discord!')
 
 # Command to ask a new question
-@bot.command(name='jeopardy', aliases=['j'])
+@bot.command(name='jeopardy', aliases=['j'], help="[j] Starts a new round of Discord Jeopardy, with a random category and price.")
 async def get_question(ctx: commands.Context):
     # only play in the jeopardy channel
     if ctx.channel.name != "jeopardy":
@@ -89,7 +91,7 @@ async def get_question(ctx: commands.Context):
     
 
 # Command to give an answer
-@bot.command(name='answer', aliases=['a'])
+@bot.command(name='answer', aliases=['a'], help="[a] Respond to the active round with your answer.")
 async def parse_answer(ctx: commands.Context, *args):
     # only play in the jeopardy channel
     if ctx.channel.name != "jeopardy":
@@ -194,7 +196,7 @@ async def parse_answer(ctx: commands.Context, *args):
     await ctx.send(f'That is correct, {user}. Your score is now {"-$" + str(user_score * -1) if user_score < 0 else "$" + str(user_score)}.')
 
 # Command to show the leaderboard
-@bot.command(name='leaderboard', aliases=['l'])
+@bot.command(name='leaderboard', aliases=['l'], help="[l] Shows the top scores.")
 async def show_leaderboard(ctx: commands.Context):
     # only play in the jeopardy channel
     if ctx.channel.name != "jeopardy":
@@ -221,11 +223,31 @@ async def show_leaderboard(ctx: commands.Context):
 
     await ctx.send(response)
 
+@bot.command(name='score', aliases=['s'], help='[s] Shows your score.')
+async def show_my_score(ctx: commands.Context):
+    # only play in the jeopardy channel
+    if ctx.channel.name != "jeopardy":
+        return
 
+    user = ctx.author.name
+
+    score = r.get("score:" + user)
+
+    if score is None:
+        await ctx.send(f'{user}\'s score is $0')
+        return
+
+    score = int(score.decode())
+    if score < 0:
+        await ctx.send(f'{user}\'s score is -${score * -1}')
+        return
+
+    await ctx.send(f'{user}\'s score is ${score}')
+    
 
     
 # Command to give some Discord jeopardy wisdom
-@bot.command(name='trebek')
+@bot.command(name='trebek', aliases=['t'], help='[t] Shows some Jeopardy wisdom')
 async def get_quote(ctx: commands.Context):
     if ctx.channel.name != "jeopardy":
         return
@@ -258,7 +280,6 @@ async def get_quote(ctx: commands.Context):
               "Great. Better luck to all of you in the next round. It's time for Discord Jeopardy. Let's take a look at the board. And the categories are: `Potent Potables`, `The Vowels`, `Presidents Who Are On the One Dollar Bill`, `Famous Titles`, `Ponies`, `The Number 10`, and finally: `Foods That End In \"Amburger\"`.",
               "Let's take a look at the board. The categories are: `Potent Potables`, `The Pen is Mightier` -- that category is all about quotes from famous authors, so you'll all probably be more comfortable with our next category -- `Shiny Objects`, continuing with `Opposites`, `Things you Shouldn't Put in Your Mouth`, `What Time is It?`, and, finally, `Months That Start With Feb`."
             ]
-    print(ctx.author)
     response = random.choice(quotes)
     await ctx.send(response)
 
