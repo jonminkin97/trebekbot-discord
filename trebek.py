@@ -1,6 +1,10 @@
 import os
 import discord
 import random
+import requests
+import redis
+import json
+from redis.exceptions import ConnectionError
 from dotenv import load_dotenv
 
 from discord.ext import commands
@@ -8,38 +12,69 @@ from discord.ext import commands
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 
-# client = discord.Client()
+# connect to the local Redis server
+r = redis.Redis(host='localhost', db=0)
+try:
+    r.set('foo', 1)
+    r.delete('foo')
+except ConnectionError:
+    print("Could not connect to Redis. Exiting")
+    exit(1)
 
-# @client.event
-# async def on_message(message):
-#     if message.author == client.user:
-#         return
 
-#     response = "It is I the great and powerful trebek"
-
-#     if message.content == "tb":
-#         await message.channel.send(response)
-
-# client.run(TOKEN)
-
+# define the bot itself
 bot = commands.Bot(command_prefix='tb ')
 
+# confirmation message in the shell when connected to Discord
 @bot.event
 async def on_ready():
     print(f'{bot.user.name} has connected to Discord!')
 
+# Command to ask a new question
+@bot.command(name='jeopardy')
+async def get_question(ctx: commands.Context):
+    # only play in the jeopardy channel
+    if ctx.channel.name != "jeopardy":
+        return
 
-# @bot.command(name='hi')
-# async def trebek(ctx):
-#     response = "It is I the great and powerful bot"
+    # the shush key exists for 5 sec after a question has been asked
+    if r.exists("shush"):
+        return
 
-#     await ctx.send(response)
+    response = ""
+    # Get the previous answer if it exists
+    prev_question = r.get("question")
+    if prev_question is not None:
+        prev_question = json.loads(prev_question.decode())
+        answer = prev_question.get("answer", "")
+        response += "The answer is `{}`.\n".format(answer)
 
-# bot.run(TOKEN)
+    # fetch a question from the api
+    resp = requests.get('http://jservice.io/api/random')
+    if not resp.ok:
+        print("Failed to get question")
+
+    # pull the question fields out of the response
+    question = resp.json()[0]
+    category = question.get("category", {}).get("title", "")
+    value= question.get("value", 0)
+    question_text = question.get("question", "")
+    response += f'The category is `{category}` for ${value}: `{question_text}`'
+
+    # put the question data in redis and turn on "shush"
+    r.set("question", json.dumps(question))
+    r.setex("shush", 10, 1)
+
+    await ctx.send(response)
+    
+    
 
 
 @bot.command(name='trebek')
-async def on_message(ctx):
+async def get_quote(ctx: commands.Context):
+    if ctx.channel.name != "jeopardy":
+        return
+
     quotes = ["Welcome back to Discord Jeopardy. Before we begin this Jeopardy round, I'd like to ask our contestants once again to please refrain from using ethnic slurs.",
               "Okay, Turd Ferguson.",
               "I hate my job.",
@@ -68,6 +103,7 @@ async def on_message(ctx):
               "Great. Better luck to all of you in the next round. It's time for Discord Jeopardy. Let's take a look at the board. And the categories are: `Potent Potables`, `The Vowels`, `Presidents Who Are On the One Dollar Bill`, `Famous Titles`, `Ponies`, `The Number 10`, and finally: `Foods That End In \"Amburger\"`.",
               "Let's take a look at the board. The categories are: `Potent Potables`, `The Pen is Mightier` -- that category is all about quotes from famous authors, so you'll all probably be more comfortable with our next category -- `Shiny Objects`, continuing with `Opposites`, `Things you Shouldn't Put in Your Mouth`, `What Time is It?`, and, finally, `Months That Start With Feb`."
             ]
+    print(ctx.author)
     response = random.choice(quotes)
     await ctx.send(response)
 
