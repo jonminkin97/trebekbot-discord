@@ -24,8 +24,6 @@ except ConnectionError:
     exit(1)
 
 # TODO
-# show the leaderboard
-# filter out "seen here"
 # help pages
 
 # define the bot itself
@@ -109,10 +107,8 @@ async def parse_answer(ctx: commands.Context, *args):
 
     question = r.get("question")
 
-    # if there is no question to get, return some wisdom
-    # TODO if multiple people answering at once makes this look weird, get rid of wisdom
+    # if there is no question to get, someone was probably a second late, so do nothing
     if not question:
-        # await get_quote(ctx)
         return
 
     # convert redis back to dictionary
@@ -197,7 +193,38 @@ async def parse_answer(ctx: commands.Context, *args):
 
     await ctx.send(f'That is correct, {user}. Your score is now {"-$" + str(user_score * -1) if user_score < 0 else "$" + str(user_score)}.')
 
+# Command to show the leaderboard
+@bot.command(name='leaderboard', aliases=['l'])
+async def show_leaderboard(ctx: commands.Context):
+    # only play in the jeopardy channel
+    if ctx.channel.name != "jeopardy":
+        return
 
+    # fetch all the score keys from redis
+    players = r.keys(pattern="score:*")
+    scores = {}
+
+    # for each key, convert it back to a string, get the value, and then put it in the score map
+    for key in players:
+        key = key.decode()
+        score = int(r.get(key))
+        scores[key[6:]] = score
+
+    # sort the score map into an array of tuples (name, score)
+    sorted_board = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+
+    response = "Let's take a look at the top scores:\n"
+    for i in range(0, len(sorted_board)):
+        player = sorted_board[i]
+        cash = "$" + str(player[1]) if player[1] >= 0 else "-$" + str(player[1] * -1)
+        response += f'{i + 1}. {player[0]}: {cash}\n'
+
+    await ctx.send(response)
+
+
+
+    
+# Command to give some Discord jeopardy wisdom
 @bot.command(name='trebek')
 async def get_quote(ctx: commands.Context):
     if ctx.channel.name != "jeopardy":
