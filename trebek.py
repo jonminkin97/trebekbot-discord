@@ -3,7 +3,9 @@ import discord
 import random
 import requests
 import redis
+import re
 import json
+from fuzzywuzzy import fuzz
 from redis.exceptions import ConnectionError
 from dotenv import load_dotenv
 
@@ -31,7 +33,7 @@ async def on_ready():
     print(f'{bot.user.name} has connected to Discord!')
 
 # Command to ask a new question
-@bot.command(name='jeopardy')
+@bot.command(name='jeopardy', aliases=['j'])
 async def get_question(ctx: commands.Context):
     # only play in the jeopardy channel
     if ctx.channel.name != "jeopardy":
@@ -61,13 +63,117 @@ async def get_question(ctx: commands.Context):
     question_text = question.get("question", "")
     response += f'The category is `{category}` for ${value}: `{question_text}`'
 
-    # put the question data in redis and turn on "shush"
+    # put the question data in redis, turn on "shush", and set the answerable time
     r.set("question", json.dumps(question))
     r.setex("shush", 10, 1)
+    r.setex("answerable", 35, 1)
 
     await ctx.send(response)
     
+
+# Command to give an answer
+@bot.command(name='answer', aliases=['a'])
+async def parse_answer(ctx: commands.Context, *args):
+    user = ctx.author.name
+    # piece together the response from what the user typed
+    user_response = ""
+    for arg in args:
+        user_response += f'{arg} '
+
+
+    # check if user answered within 30 sec
+    answerable = r.exists("answerable")
+
+    question = r.get("question")
+
+    # if there is no question to get, return some wisdom
+    # TODO if multiple people answering at once makes this look weird, get rid of wisdom
+    if not question:
+        await get_quote(ctx)
+        return
+
+    # convert redis back to dictionary
+    question = json.loads(question.decode())
+    answer = question.get("answer", "")
+    value = question.get("value", 0)
+    question_id = question.get("id", 0)
+
+    # check if the user responded with a question
+    is_question_format = re.search("^(what|whats|where|wheres|who|whos)",
+        re.sub("[^A-Za-z0-9_ \t]", "" , user_response), flags=re.I)
+
+    # format the user's user_response to get their answer
+    # replace & with and
+    user_response = re.sub("\s+(&)\s+", " and ", user_response)
+    # remove all punctuation
+    user_response = re.sub("[^A-Za-z0-9_ \t]", "", user_response)
+    # remove all question elements
+    user_response = re.sub("^(what |whats |where |wheres |who |whos )", "", user_response, flags=re.I)
+    user_response = user_response.strip()
+    user_response = re.sub("^(is |are |was |were )", "", user_response, flags=re.I)
+    user_response = user_response.strip()
+    user_response = re.sub("^(the |a |an )", "", user_response, flags=re.I)
+    user_response = user_response.strip()
+    user_response = re.sub("\?+$", "", user_response)
+    user_response = user_response.strip()
+    user_response = user_response.lower()
+
+    # format the correct answer
+    answer = re.sub("[^A-Za-z0-9_ \t]", "", answer)
+    answer = answer.strip()
+    answer = re.sub("^(the|a|an)", "", answer, flags=re.I)
+    answer = answer.strip()
+    answer = answer.lower()
+
+    # Do a fuzzy comparison to see if the user's answer is close enough to correct
+    is_correct = (fuzz.ratio(user_response, answer) > 60)
     
+    # print(f'Fuzz ratio between {user_response} and {answer}: {fuzz.ratio(user_response, answer)}')
+
+    user_score = 0 if not r.get(user) else int(r.get(user).decode())
+
+    # If the user has already attempted this question, shoo them away
+    if r.exists(user + ":" + str(question_id)):
+        await ctx.send(f'You had your chance, {user}. Let someone else answer.')
+        return
+
+    # if the user was wrong, deduct points, and shush them for the rest of this question
+    if not is_correct:
+        user_score -= value
+        r.set(user, user_score)
+        r.setex(user + ":" + str(question_id), 30, "true")
+        await ctx.send(f'That is incorrect, {user}. Your score is now {user_score}')
+        return
+
+    # If the user did not respond within 30 sec, respond accordingly
+    if not answerable:
+        # clean up the keys in redis
+        r.delete("question")
+        r.delete("shush")
+        r.delete("answerable")
+        # TODO condition where two people have answered at once
+        if is_correct:
+            await ctx.send(f'That is correct, {user}, but time\'s up! Remember you only have 30 seconds to answer.')
+        else:
+            await ctx.send(f'Time\'s up, {user}. Remember, you have 30 seconds to answer.')
+        return
+
+    # If the user did not respond in the form of a question, deduct points and shush them for the rest of the qusestion
+    if not is_question_format:
+        user_score -= value
+        r.set(user, user_score)
+        r.setex(user + ":" + str(question_id), 30, "true")
+        await ctx.send(f'That is correct, {user}, but responses have to be in the form of a question. Your score is now {user_score}.')
+        return
+
+    # The user answered correctly, so add points and delete the question
+    user_score += value
+    r.set(user, user_score)
+    r.delete("question")
+    r.delete("shush")
+    r.delete("answerable")
+
+    await ctx.send(f'That is correct, {user}. Your score is now {user_score}.')
 
 
 @bot.command(name='trebek')
