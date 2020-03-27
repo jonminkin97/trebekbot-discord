@@ -67,8 +67,8 @@ async def get_question(ctx: commands.Context):
     category = question.get("category", {}).get("title", "")
     value= question.get("value", 0)
     if not value:
-        value = 0
-        question["value"] = 0
+        value = 200
+        question["value"] = 200
     question_text = question.get("question", "")
 
     # if the question has "seen here" in it, just get a new question
