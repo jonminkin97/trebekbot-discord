@@ -66,6 +66,9 @@ async def get_question(ctx: commands.Context):
     question = resp.json()[0]
     category = question.get("category", {}).get("title", "")
     value= question.get("value", 0)
+    if not value:
+        value = 0
+        question["value"] = 0
     question_text = question.get("question", "")
 
     # if the question has "seen here" in it, just get a new question
@@ -147,7 +150,7 @@ async def parse_answer(ctx: commands.Context, *args):
     answer = answer.lower()
 
     # Do a fuzzy comparison to see if the user's answer is close enough to correct
-    is_correct = (fuzz.ratio(user_response, answer) > 60)
+    is_correct = (fuzz.ratio(user_response, answer) > 50)
     
     # print(f'Fuzz ratio between {user_response} and {answer}: {fuzz.ratio(user_response, answer)}')
 
