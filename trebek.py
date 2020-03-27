@@ -71,8 +71,8 @@ async def get_question(ctx: commands.Context):
         question["value"] = 200
     question_text = question.get("question", "")
 
-    # if the question has "seen here" in it, just get a new question
-    while "seen here" in question:
+    # if the question has "seen here" in it, or if no question was sent in the first place, just get a new question
+    while "seen here" in question or not question:
         resp = requests.get('http://jservice.io/api/random')
         if not resp.ok:
             print("Failed to get question")
@@ -81,6 +81,9 @@ async def get_question(ctx: commands.Context):
         question = resp.json()[0]
         category = question.get("category", {}).get("title", "")
         value= question.get("value", 0)
+        if not value:
+            value = 200
+            question["value"] = 200
         question_text = question.get("question", "")
 
     response += f'The category is `{category}` for ${value}: `{question_text}`'
