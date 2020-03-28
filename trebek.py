@@ -72,7 +72,7 @@ async def get_question(ctx: commands.Context):
     question_text = question.get("question", "")
 
     # if the question has "seen here" in it, or if no question was sent in the first place, just get a new question
-    while "seen here" in question or not question:
+    while "seen here" in question_text or not question_text:
         resp = requests.get('http://jservice.io/api/random')
         if not resp.ok:
             print("Failed to get question")

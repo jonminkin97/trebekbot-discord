@@ -36,3 +36,18 @@ You are now ready to run the bot. To run the bot in the background of your termi
 ```nohup ./venv/bin/python3 trebek.py > output.log 2>&1 &```
 
 You should now be able to test the bot in your Discord server by typing "tb help" in the #jeopardy channel.
+
+### Shutting down the Bot
+If you ever need to shut down the bot to update the code, perform the following.
+
+First, run the following command to get the process id of the bot
+
+```ps -aux | grep "./venv/bin/python3 trebek.py"```
+
+Note the process id next to the result (it should be the first number reading from the left, right after your username)
+
+To actually stop the bot, run:
+
+```kill -s TERM <PID>```
+
+replacing \<PID\> with the process id you just found. Give the bot a few seconds to shut down, and then run the previous ```ps``` command again to verify that the process is gone.
